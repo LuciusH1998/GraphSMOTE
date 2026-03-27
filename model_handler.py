@@ -26,14 +26,22 @@ class ModelHandlerModule():
         self.patience = self.args.patience
         self.result = ResultManager(args=configuration)
 
+        # =========================
+        # FIXED DEVICE HANDLING
+        # =========================
         self.seed = self.args.seed
-        device = torch.device(self.args.cuda_id)
+        cuda_id = self.args.cuda_id
+        device = torch.device(f'cuda:{cuda_id}' if isinstance(cuda_id, int) else cuda_id)
+
         if device.type == "cuda":
             torch.cuda.set_device(device)
 
         self.model = self.select_model()
         self.model.cuda()
 
+    # =========================
+    # SEED SETTING
+    # =========================
     def set_seed(self) -> None:
         random.seed(self.seed)
         np.random.seed(self.seed)
@@ -44,6 +52,9 @@ class ModelHandlerModule():
         torch.backends.cudnn.benchmark = False
         os.environ['PYTHONHASHSEED'] = str(self.seed)
 
+    # =========================
+    # MODEL SELECTION
+    # =========================
     def select_model(self) -> nn.Module:
         torch.cuda.empty_cache()
         graph = self.dataset['graph']
@@ -63,6 +74,9 @@ class ModelHandlerModule():
 
         return model
 
+    # =========================
+    # PRETRAIN (EMBEDDINGS)
+    # =========================
     def pretrain_embeddings(self, epochs=5):
         print("Pretraining DRAG encoder...")
 
@@ -74,15 +88,19 @@ class ModelHandlerModule():
         y_train = self.dataset['y_train']
 
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(len(self.args.emb_size))
-        device = torch.device(self.args.cuda_id)
+        device = torch.device(f'cuda:{self.args.cuda_id}' if isinstance(self.args.cuda_id, int) else self.args.cuda_id)
 
         for epoch in range(epochs):
             batch_idx = generate_batch_idx(idx_train, y_train, self.args.batch_size, self.args.seed)
 
             train_loader = dgl.dataloading.DataLoader(
-                graph, batch_idx, sampler,
+                graph,
+                batch_idx,
+                sampler,
                 batch_size=self.args.batch_size,
-                shuffle=False, drop_last=False, use_uva=True
+                shuffle=False,
+                drop_last=False,
+                use_uva=True
             )
 
             model.train()
@@ -102,11 +120,16 @@ class ModelHandlerModule():
 
         print("Pretraining complete.")
 
+    # =========================
+    # TRAINING LOOP
+    # =========================
     def train(self) -> Tuple[np.array, np.array]:
         self.set_seed()
         torch.cuda.empty_cache()
 
-        device = torch.device(self.args.cuda_id)
+        cuda_id = self.args.cuda_id
+        device = torch.device(f'cuda:{cuda_id}' if isinstance(cuda_id, int) else cuda_id)
+
         if device.type == "cuda":
             torch.cuda.set_device(device)
 
@@ -137,9 +160,13 @@ class ModelHandlerModule():
             batch_idx = generate_batch_idx(idx_train, y_train, self.args.batch_size, self.args.seed)
 
             train_loader = dgl.dataloading.DataLoader(
-                graph, batch_idx, sampler,
+                graph,
+                batch_idx,
+                sampler,
                 batch_size=self.args.batch_size,
-                shuffle=False, drop_last=False, use_uva=True
+                shuffle=False,
+                drop_last=False,
+                use_uva=True
             )
 
             start_time = time.time()
@@ -164,6 +191,9 @@ class ModelHandlerModule():
             line = f'Epoch: {epoch + 1} (Best: {epoch_best}), loss: {np.mean(avg_loss)}, time: {epoch_time}s'
             self.result.write_train_log(line, print_line=True)
 
+            # =========================
+            # VALIDATION
+            # =========================
             if (epoch + 1) % self.args.valid_epochs == 0:
                 model.eval()
 
@@ -185,6 +215,9 @@ class ModelHandlerModule():
 
                     torch.save(model.state_dict(), self.result.model_path)
 
+            # =========================
+            # EARLY STOPPING
+            # =========================
             if (epoch - epoch_best) > self.args.patience:
                 print("\n", "*" * 20, f"Early stopping at epoch {epoch}", "*" * 20)
                 break
@@ -206,3 +239,4 @@ class ModelHandlerModule():
         )
 
         return auc_test, f1_mac_test
+

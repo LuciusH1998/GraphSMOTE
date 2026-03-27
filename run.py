@@ -1,3 +1,5 @@
+%%writefile /kaggle/working/GraphSMOTE/run.py
+
 import argparse
 import json
 
@@ -28,10 +30,16 @@ def extract_embeddings(model_handler, data_handler):
     model.eval()
 
     graph = data_handler.dataset['graph']
-    device = torch.device(model_handler.args.cuda_id)
 
-    # Move graph to device
-    graph = graph.to(device)
+    # =========================
+    # FIXED DEVICE HANDLING
+    # =========================
+    cuda_id = model_handler.args.cuda_id
+    device = torch.device(f'cuda:{cuda_id}' if isinstance(cuda_id, int) else cuda_id)
+
+    # Move graph to device (only if CUDA)
+    if device.type == "cuda":
+        graph = graph.to(device)
 
     # Create full blocks (no sampling)
     blocks = [graph for _ in range(len(model_handler.args.emb_size))]
@@ -48,17 +56,25 @@ def extract_embeddings(model_handler, data_handler):
 
 
 def main(args) -> None:
+    # =========================
     # STEP 1: Load config
+    # =========================
     with open(args['exp_config_path']) as f:
         args = json.load(f)
 
+    # =========================
     # STEP 2: Initialize DataHandler
+    # =========================
     data_handler = DataHandlerModule(args)
 
+    # =========================
     # STEP 3: Initialize ModelHandler
+    # =========================
     model_handler = ModelHandlerModule(args, data_handler)
 
-    # STEP 4: PRETRAIN (if using embedding SMOTE)
+    # =========================
+    # STEP 4: PRETRAIN (Embedding SMOTE)
+    # =========================
     if args.get("use_embedding_smote", False):
         model_handler.pretrain_embeddings(epochs=5)
 
@@ -75,7 +91,9 @@ def main(args) -> None:
         # Rebuild model
         model_handler = ModelHandlerModule(args, data_handler)
 
-    # STEP 8: Train
+    # =========================
+    # STEP 8: Train model
+    # =========================
     model_handler.train()
 
 

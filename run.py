@@ -1,5 +1,3 @@
-%%writefile /kaggle/working/GraphSMOTE/run.py
-
 import argparse
 import json
 
